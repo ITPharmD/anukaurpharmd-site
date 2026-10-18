@@ -272,7 +272,8 @@
    Leave it as '' and the form falls back to the visitor's email app.
    --------------------------------------------------------------- */
 (function () {
-  var FORM_ENDPOINT = '';
+  var FORM_ENDPOINT = 'https://api.staticforms.dev/submit';
+  var FORM_KEY = 'sf_409d01a88cc711810a6c3331'; /* public key: it can only deliver to the inbox registered with Static Forms */
   var MAIL = ['Pharmacist.IT', 'gmail.com'].join('@');
 
   /* ---- Verify links with no public URL yet ---- */
@@ -318,24 +319,40 @@
       status.textContent = 'Please add your name, email, and a message.';
       return;
     }
-    if (FORM_ENDPOINT) {
-      status.textContent = 'Sending…';
-      fetch(FORM_ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify(data)
-      }).then(function (r) {
-        if (!r.ok) throw new Error('bad status');
-        form.reset();
-        status.textContent = 'Thank you. Your message has been sent and I will reply by email.';
-      }).catch(function () {
-        status.textContent = 'That did not send. Please email ' + MAIL + ' directly.';
-      });
-      return;
-    }
     var subject = (data.reason || 'Website enquiry') + ' — ' + data.name + (data.org ? ' (' + data.org + ')' : '');
     var body = 'Name: ' + data.name + '\nOrganization: ' + (data.org || '-') + '\nEmail: ' + data.email +
                '\nReason: ' + (data.reason || '-') + '\n\n' + data.message;
+    /* honeypot: real visitors never see or fill this field; bots do */
+    var trap = form.elements['website'];
+    if (trap && trap.value) {
+      form.reset();
+      status.textContent = 'Thank you. Your message has been sent and I will reply by email.';
+      return;
+    }
+    if (FORM_ENDPOINT) {
+      status.textContent = 'Sending…';
+      var fd = new FormData();
+      fd.append('apiKey', FORM_KEY);
+      fd.append('subject', subject);
+      fd.append('name', data.name);
+      fd.append('email', data.email);
+      fd.append('message', body);
+      fetch(FORM_ENDPOINT, { method: 'POST', headers: { Accept: 'application/json' }, body: fd })
+        .then(function (r) {
+          return r.json().catch(function () { return {}; }).then(function (j) {
+            if (!r.ok || j.success === false) throw new Error('bad status');
+          });
+        })
+        .then(function () {
+          form.reset();
+          status.textContent = 'Thank you. Your message has been sent and I will reply by email.';
+        })
+        .catch(function () {
+          status.textContent = 'That did not send. Opening your email app instead.';
+          window.location.href = 'mailto:' + MAIL + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+        });
+      return;
+    }
     window.location.href = 'mailto:' + MAIL + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
     status.textContent = 'Your email app should open with the message ready to send.';
   });
